@@ -935,7 +935,7 @@ Item {
               interactive: false
               boundsBehavior: Flickable.StopAtBounds
               CC.ScrollBar.horizontal: CC.ScrollBar {
-                policy: root.tableWidth > hscroll.width ? CC.ScrollBar.AsNeeded : CC.ScrollBar.AlwaysOff
+                policy: root.tableWidth > hscroll.width ? CC.ScrollBar.AlwaysOn : CC.ScrollBar.AlwaysOff
               }
 
               MouseArea {
