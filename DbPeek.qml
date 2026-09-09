@@ -793,9 +793,6 @@ Item {
             if (Util.editsFilter(event, root.activeFilter)) {
               root.setFilter(Util.editedFilter(event, root.activeFilter))
               event.accepted = true
-            } else if (event.key === Qt.Key_Backspace && root.activeFilter === "") {
-              root.goBack()
-              event.accepted = true
             } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127) {
               root.setFilter(root.activeFilter + event.text)
               event.accepted = true
@@ -928,14 +925,47 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
 
-            CC.ScrollView {
+            Flickable {
               id: hscroll
               anchors.fill: parent
               visible: root.view === "rows" && !root.rowDetail
               clip: true
-              contentWidth: Math.max(root.tableWidth, hscroll.availableWidth)
-              CC.ScrollBar.horizontal.policy: root.tableWidth > hscroll.availableWidth ? CC.ScrollBar.AsNeeded : CC.ScrollBar.AlwaysOff
-              CC.ScrollBar.vertical.policy: CC.ScrollBar.AlwaysOff
+              contentWidth: Math.max(root.tableWidth, hscroll.width)
+              contentHeight: hscroll.height
+              interactive: false
+              boundsBehavior: Flickable.StopAtBounds
+              CC.ScrollBar.horizontal: CC.ScrollBar {
+                policy: root.tableWidth > hscroll.width ? CC.ScrollBar.AsNeeded : CC.ScrollBar.AlwaysOff
+              }
+
+              WheelHandler {
+                id: wheelVertical
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                onWheel: (event) => {
+                  if (root.rowDetail) return
+                  if (event.angleDelta.y === 0) return
+                  if ((event.modifiers & Qt.ShiftModifier) !== 0) {
+                    var mx = Math.max(0, root.tableWidth - hscroll.width)
+                    hscroll.contentX = Math.max(0, Math.min(hscroll.contentX - event.angleDelta.y / 2, mx))
+                  } else {
+                    root.select(event.angleDelta.y > 0 ? -3 : 3)
+                  }
+                  event.accepted = true
+                }
+              }
+
+              WheelHandler {
+                id: wheelHorizontal
+                orientation: Qt.Horizontal
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                onWheel: (event) => {
+                  if (root.rowDetail) return
+                  if (event.angleDelta.x === 0) return
+                  var mx = Math.max(0, root.tableWidth - hscroll.width)
+                  hscroll.contentX = Math.max(0, Math.min(hscroll.contentX - event.angleDelta.x / 2, mx))
+                  event.accepted = true
+                }
+              }
 
               Column {
                 width: hscroll.contentWidth
@@ -985,6 +1015,7 @@ Item {
                   width: parent.width
                   height: hscroll.height - Style.space(30) - 1
                   clip: true
+                  interactive: false
                   boundsBehavior: Flickable.StopAtBounds
                   CC.ScrollBar.vertical: CC.ScrollBar {
                     policy: rowsList.contentHeight > rowsList.height ? CC.ScrollBar.AsNeeded : CC.ScrollBar.AlwaysOff
