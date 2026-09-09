@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "madddtone.gomysql-peek",
+  "name": "GoMySQL Peek",
+  "version": "0.1.0",
+  "author": "kalel",
+  "license": "MIT",
+  "description": "Quick MySQL data browser overlay: connections, databases, tables, rows, and SELECT queries, powered by the gomysql-peek engine.",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "DbPeek.qml"
+  }
+}
