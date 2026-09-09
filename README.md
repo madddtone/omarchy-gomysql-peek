@@ -143,12 +143,17 @@ files into `~/.config/omarchy/plugins/`, enables it, and restarts the shell.
 After QML edits run `omarchy restart shell` (symlinked files don't hot-reload).
 
 ```
-manifest.json    plugin manifest (kind: overlay, id madddtone.gomysql-peek)
-DbPeek.qml       the overlay UI
-Peek.js          parsing/format helpers
-engine/          the Go data engine (module gomysql-peek/engine)
-install.sh       engine build + (dev) link/enable/restart
+manifest.json      plugin manifest (kinds: overlay, bar-widget; id madddtone.gomysql-peek)
+DbPeek.qml         the overlay UI
+PeekBarWidget.qml  the bar icon that toggles the overlay
+Peek.js            parsing/format helpers
+engine/            the Go data engine (module gomysql-peek/engine)
+install.sh         engine build + (dev) link/enable/restart
 ```
+
+Note: the widget file must not be named `BarWidget.qml` — that collides with
+the shell's `qs.Ui` `BarWidget` type and Qt rejects the entry point with
+"File name case mismatch".
 
 ## License
 
