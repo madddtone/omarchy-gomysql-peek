@@ -106,6 +106,7 @@ rm ~/.local/bin/omysql-engine
 |--------------|-------------------------------------------------|
 | ↑ / ↓        | Move selection (PgUp/PgDn ±8, Home/End ends)    |
 | ⏎            | Data view: open/close the row's field-value view. Lists: open. SQL/search box: run/apply |
+| `y`          | Row detail: yank the focused field's value to the clipboard (wl-copy) |
 | type         | Filter the current list — each screen keeps its own filter |
 | `/`          | Search all columns of the open table (LIKE)     |
 | `q`          | Open the read-only SQL box                      |

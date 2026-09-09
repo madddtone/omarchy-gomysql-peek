@@ -30,6 +30,7 @@ Item {
   property string tableFilter: ""
   readonly property string activeFilter: view === "profiles" ? profileFilter : view === "databases" ? databaseFilter : view === "tables" ? tableFilter : ""
   property int selectedIndex: 0
+  property string yankFeedback: ""
   property bool searchOpen: false
   property string searchTerm: ""
   property bool queryOpen: false
@@ -124,7 +125,7 @@ Item {
   readonly property string hintText: {
     if (escWarn) return "press esc again to go back"
     if (view === "rows") {
-      if (rowDetail) return "↑ ↓ field · ← → row · ⏎ or esc back to data"
+      if (rowDetail) return "↑ ↓ field · ← → row · y yank · ⏎ or esc back to data"
       if (isQueryResult) return "⏎ row · r re-run · ⇧R fresh table · esc esc back"
       return "⏎ row · / search · q sql · ← → page · r refresh · ⇧R fresh · esc esc back"
     }
@@ -504,6 +505,23 @@ Item {
     detailList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
   }
 
+  function yankField() {
+    if (!root.rowDetail) return
+    var pair = root.detailPairs[root.selectedIndex]
+    if (!pair) return
+    var shown = Peek.fmtCell(pair.value)
+    var quoted = "'" + String(shown).replace(/'/g, "'\\''") + "'"
+    Util.execDetached("wl-copy " + quoted)
+    root.yankFeedback = "yanked: " + shown
+    yankTimer.restart()
+  }
+
+  Timer {
+    id: yankTimer
+    interval: 2000
+    onTriggered: root.yankFeedback = ""
+  }
+
   function detailRowShift(delta) {
     var newRow = root.detailRow + delta
     if (newRow < 0 || newRow >= root.rows.length) return
@@ -778,6 +796,9 @@ Item {
           } else if (event.key === Qt.Key_Right && root.view === "rows") {
             if (root.rowDetail) root.detailRowShift(1)
             else root.nextPage()
+            event.accepted = true
+          } else if (event.key === Qt.Key_Y && root.view === "rows" && root.rowDetail) {
+            root.yankField()
             event.accepted = true
           } else if (event.key === Qt.Key_Slash && root.view === "rows") {
             root.openSearch()
@@ -1380,6 +1401,7 @@ Item {
                 if (root.view === "profiles") {
                   return root.activeFilter !== "" ? ("filter: " + root.activeFilter) : "n new · e edit · d delete · ⏎ open · esc back"
                 }
+                if (root.yankFeedback !== "") return root.yankFeedback
                 return root.activeFilter !== "" ? ("filter: " + root.activeFilter) : root.hintText
               }
               color: root.view === "form" && root.errorText !== "" ? root.urgent : root.dim
