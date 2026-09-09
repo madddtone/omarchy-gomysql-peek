@@ -938,32 +938,22 @@ Item {
                 policy: root.tableWidth > hscroll.width ? CC.ScrollBar.AsNeeded : CC.ScrollBar.AlwaysOff
               }
 
-              WheelHandler {
-                id: wheelVertical
-                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                onWheel: (event) => {
+              MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.NoButton
+                onWheel: (wheel) => {
                   if (root.rowDetail) return
-                  if (event.angleDelta.y === 0) return
-                  if ((event.modifiers & Qt.ShiftModifier) !== 0) {
-                    var mx = Math.max(0, root.tableWidth - hscroll.width)
-                    hscroll.contentX = Math.max(0, Math.min(hscroll.contentX - event.angleDelta.y / 2, mx))
-                  } else {
-                    root.select(event.angleDelta.y > 0 ? -3 : 3)
-                  }
-                  event.accepted = true
-                }
-              }
-
-              WheelHandler {
-                id: wheelHorizontal
-                orientation: Qt.Horizontal
-                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                onWheel: (event) => {
-                  if (root.rowDetail) return
-                  if (event.angleDelta.x === 0) return
                   var mx = Math.max(0, root.tableWidth - hscroll.width)
-                  hscroll.contentX = Math.max(0, Math.min(hscroll.contentX - event.angleDelta.x / 2, mx))
-                  event.accepted = true
+                  var dy = wheel.angleDelta.y
+                  var dx = wheel.angleDelta.x
+                  if ((wheel.modifiers & Qt.ShiftModifier) !== 0 && dy !== 0) {
+                    hscroll.contentX = Math.max(0, Math.min(hscroll.contentX - dy / 2, mx))
+                  } else if (dx !== 0) {
+                    hscroll.contentX = Math.max(0, Math.min(hscroll.contentX - dx / 2, mx))
+                  } else if (dy !== 0) {
+                    root.select(dy > 0 ? -3 : 3)
+                  }
+                  wheel.accepted = true
                 }
               }
 
@@ -1034,6 +1024,7 @@ Item {
                     MouseArea {
                       anchors.fill: parent
                       hoverEnabled: true
+                      scrollGestureEnabled: false
                       onContainsMouseChanged: if (containsMouse) root.selectedIndex = rowDelegate.index
                       onClicked: root.selectedIndex = rowDelegate.index
                     }
