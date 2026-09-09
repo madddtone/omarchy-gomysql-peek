@@ -17,7 +17,7 @@ PLUGIN_ID="madddtone.gomysql-peek"
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 
 if ! command -v go >/dev/null 2>&1; then
-  echo "error: go is required to build the engine (sudo pacman -S go)" >&2
+  echo "error: go is required to build the engine (install go with your package manager)" >&2
   exit 1
 fi
 
