@@ -51,4 +51,4 @@ echo
 echo "Installed. Summon it with:"
 echo "  omarchy-shell shell toggle $PLUGIN_ID"
 echo "or bind a key in ~/.config/hypr/bindings.lua, e.g.:"
-echo "  o.bind(\"SUPER + I\", \"\", \"omarchy-shell shell toggle $PLUGIN_ID\")"
+echo "  o.bind(\"SUPER + M\", \"\", \"omarchy-shell shell toggle $PLUGIN_ID\")"

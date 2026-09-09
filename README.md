@@ -66,7 +66,7 @@ omarchy-shell shell summon madddtone.gomysql-peek '{"profile":"iwos3","database"
 In `~/.config/hypr/bindings.lua`:
 
 ```lua
-o.bind("SUPER + I", "GoMySQL Peek", "omarchy-shell shell toggle madddtone.gomysql-peek")
+o.bind("SUPER + M", "GoMySQL Peek", "omarchy-shell shell toggle madddtone.gomysql-peek")
 ```
 
 ### Menu entry
