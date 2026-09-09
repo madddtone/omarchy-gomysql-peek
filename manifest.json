@@ -13,7 +13,7 @@
   "keepLoaded": true,
   "entryPoints": {
     "overlay": "DbPeek.qml",
-    "barWidget": "BarWidget.qml"
+    "barWidget": "PeekBarWidget.qml"
   },
   "barWidget": {
     "displayName": "GoMySQL Peek",
