@@ -10,13 +10,13 @@ search every column, and run read-only SQL queries, all from the keyboard.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
- │ users                                    / search · q …  │
-│ iwos3 › iwos3 › users                                    │
+│ employees                                 / search · q … │
+│ sample › sampledb › employees                            │
 ├──────────────────────────────────────────────────────────┤
-│ id  first_name  last_name  country_code  telephone  …    │
-│ 1   admin        NULL        +62           81315…       │
+│ id  first_name  last_name  email      salary  hire_date  │
+│ 1   John         Doe        john.doe@…  75000   2021-03… │
 ├──────────────────────────────────────────────────────────┤
-│ 1–50 of 1234                          ◀ Prev    Next ▶   │
+│ 1–5 of 5                              ◀ Prev    Next ▶   │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -62,7 +62,7 @@ omarchy-shell shell toggle madddtone.gomysql-peek
 You can also jump straight into a table:
 
 ```bash
-omarchy-shell shell summon madddtone.gomysql-peek '{"profile":"iwos3","database":"iwos3","table":"users"}'
+omarchy-shell shell summon madddtone.gomysql-peek '{"profile":"sample","database":"sampledb","table":"employees"}'
 ```
 
 ### Keybind
@@ -131,13 +131,13 @@ The plugin drives `~/.local/bin/omysql-engine`; you can use it directly too:
 
 ```bash
 omysql-engine profiles
-omysql-engine profile get --name iwos3          # full profile incl. password
+omysql-engine profile get --name sample          # full profile incl. password
 omysql-engine profile save --name prod --host db.local --port 3306 --user app --password secret --database shop
 omysql-engine profile remove --name prod
-omysql-engine dbs --profile iwos3
-omysql-engine tables --profile iwos3 --db iwos3
-omysql-engine rows --profile iwos3 --db iwos3 --table users --limit 50 --offset 0 --search smith
-omysql-engine query --profile iwos3 --db iwos3 --sql "SELECT id, email FROM users LIMIT 10"
+omysql-engine dbs --profile sample
+omysql-engine tables --profile sample --db sampledb
+omysql-engine rows --profile sample --db sampledb --table employees --limit 50 --offset 0 --search doe
+omysql-engine query --profile sample --db sampledb --sql "SELECT id, email FROM employees LIMIT 10"
 ```
 
 All commands print JSON to stdout and errors to stderr. `--profile` must
