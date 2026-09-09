@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "madddtone.gomysql-peek",
   "name": "GoMySQL Peek",
-  "version": "0.2.0",
-  "author": "kalel",
+  "version": "1.0.0",
+  "author": "madddtone",
   "license": "MIT",
   "description": "Quick MySQL data browser overlay: connections, databases, tables, rows, and SELECT queries, powered by the gomysql-peek engine.",
   "kinds": [

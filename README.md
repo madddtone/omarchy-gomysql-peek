@@ -1,5 +1,9 @@
 # GoMySQL Peek
 
+<p align="center">
+  <img src="preview.png" alt="GoMySQL Peek browsing a table" width="720">
+</p>
+
 A fullscreen [Omarchy](https://omarchy.org) shell overlay for quickly peeking at
 MySQL data — pick a connection, browse databases and tables, page through rows,
 search every column, and run read-only SQL queries, all from the keyboard.
@@ -74,6 +78,12 @@ o.bind("SUPER + M", "GoMySQL Peek", "omarchy-shell shell toggle madddtone.gomysq
 The plugin also ships a small bar icon (database glyph). When enabled it lands
 in the right bar section (pick left/center/right during `omarchy plugin add`)
 and opens the overlay on click — handy if you don't use the keybind.
+
+Move it between sections any time:
+
+```sh
+omarchy bar move madddtone.gomysql-peek --section center
+```
 
 ### Menu entry
 
