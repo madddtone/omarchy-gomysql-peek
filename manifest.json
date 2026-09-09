@@ -2,15 +2,24 @@
   "schemaVersion": 1,
   "id": "madddtone.gomysql-peek",
   "name": "GoMySQL Peek",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "kalel",
   "license": "MIT",
   "description": "Quick MySQL data browser overlay: connections, databases, tables, rows, and SELECT queries, powered by the gomysql-peek engine.",
   "kinds": [
-    "overlay"
+    "overlay",
+    "bar-widget"
   ],
   "keepLoaded": true,
   "entryPoints": {
-    "overlay": "DbPeek.qml"
+    "overlay": "DbPeek.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "GoMySQL Peek",
+    "description": "One-click access to the MySQL data browser overlay",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
   }
 }

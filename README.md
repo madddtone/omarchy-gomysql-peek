@@ -69,6 +69,12 @@ In `~/.config/hypr/bindings.lua`:
 o.bind("SUPER + M", "GoMySQL Peek", "omarchy-shell shell toggle madddtone.gomysql-peek")
 ```
 
+### Bar widget
+
+The plugin also ships a small bar icon (database glyph). When enabled it lands
+in the right bar section (pick left/center/right during `omarchy plugin add`)
+and opens the overlay on click — handy if you don't use the keybind.
+
 ### Menu entry
 
 In `~/.config/omarchy/extensions/omarchy-menu.jsonc`:

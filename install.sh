@@ -33,7 +33,7 @@ fi
 
 echo "==> Linking plugin -> $PLUGIN_DIR"
 mkdir -p "$PLUGIN_DIR"
-for f in manifest.json DbPeek.qml Peek.js install.sh README.md LICENSE; do
+for f in manifest.json DbPeek.qml Peek.js BarWidget.qml install.sh README.md LICENSE; do
   [[ -f "$REPO_DIR/$f" ]] || continue
   if [ -e "$PLUGIN_DIR/$f" ] && [ ! -L "$PLUGIN_DIR/$f" ]; then
     mv "$PLUGIN_DIR/$f" "$PLUGIN_DIR/$f.bak.$(date +%s)"
