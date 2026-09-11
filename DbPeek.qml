@@ -687,7 +687,7 @@ Item {
 
   function emptyText() {
     if (busy) return "loading…"
-    if (view === "profiles") return profiles.length === 0 ? "No connections — add one with gomysql first" : "No matches for “" + activeFilter + "”"
+    if (view === "profiles") return profiles.length === 0 ? "No connections yet — press n to add your first one" : "No matches for “" + activeFilter + "”"
     if (view === "databases") return databases.length === 0 ? "No databases visible for this user" : "No matches for “" + activeFilter + "”"
     if (view === "tables") return tables.length === 0 ? "No tables in " + database : "No matches for “" + activeFilter + "”"
     if (errorText !== "") return ""

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"flag"
@@ -57,7 +58,13 @@ func connectionsPath() string {
 func loadProfiles() []connProfile {
 	data, err := os.ReadFile(connectionsPath())
 	if err != nil {
+		if os.IsNotExist(err) {
+			return []connProfile{}
+		}
 		fail("no gomysql connections file (%s): %v", connectionsPath(), err)
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return []connProfile{}
 	}
 	var out []connProfile
 	if err := json.Unmarshal(data, &out); err != nil {
