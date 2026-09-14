@@ -242,16 +242,12 @@ func cmdProfileGet(fs *flag.FlagSet) {
 func cmdProfileSave(fs *flag.FlagSet) {
 	_ = fs.Parse(os.Args[3:])
 	// Credentials arrive over stdin (a private pipe), never on the process
-	// command line where every local user could read them via ps.
-	data, err := io.ReadAll(io.LimitReader(os.Stdin, maxProfileBytes+1))
-	if err != nil {
-		fail("cannot read profile from stdin: %v", err)
-	}
-	if len(data) > maxProfileBytes {
-		fail("profile data too large")
-	}
+	// command line where every local user could read them via ps. A Decoder
+	// is used instead of ReadAll: the pipe stays open (no EOF), so reading
+	// must complete after one JSON value, not at end-of-stream.
 	var p connProfile
-	if err := json.Unmarshal(data, &p); err != nil {
+	dec := json.NewDecoder(io.LimitReader(os.Stdin, maxProfileBytes))
+	if err := dec.Decode(&p); err != nil {
 		fail("invalid profile JSON on stdin: %v", err)
 	}
 	if p.Name == "" || p.Host == "" {
