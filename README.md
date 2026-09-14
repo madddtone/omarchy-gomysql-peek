@@ -133,7 +133,7 @@ The plugin drives `~/.local/bin/omysql-engine`; you can use it directly too:
 ```bash
 omysql-engine profiles
 omysql-engine profile get --name sample          # full profile incl. password
-omysql-engine profile save --name prod --host db.local --port 3306 --user app --password secret --database shop
+echo '{"name":"prod","host":"db.local","port":"3306","user":"app","password":"secret","database":"shop"}' | omysql-engine profile save
 omysql-engine profile remove --name prod
 omysql-engine dbs --profile sample
 omysql-engine tables --profile sample --db sampledb
@@ -145,13 +145,33 @@ All commands print JSON to stdout and errors to stderr. `--profile` must
 match a `name` in `~/.config/gomysql/connections.json` (override the file
 location with `GOMYSQL_CONNECTIONS`). `rows` caps pages at 500 rows;
 `query` caps results at 500 rows (`--max-rows` up to 5000) and rejects any
-statement that is not read-only.
+statement that is not read-only. `profile save` reads the profile JSON from
+stdin so the password never appears on the process command line.
+
+## Security model
+
+- **Credentials:** the overlay sends profiles (password included) to the
+  engine over a private stdin pipe, never via argv. `connections.json` lives
+  in a `0700` directory owned by you; the engine opens it with `O_NOFOLLOW`,
+  verifies it is a regular file owned by you with `0600` permissions (and
+  refuses otherwise), and publishes updates atomically (private temp file +
+  rename, then re-verified).
+- **Read-only SQL:** the free-text query box allowlists `SELECT / SHOW /
+  DESCRIBE / EXPLAIN / WITH / VALUES`, rejects `ANALYZE`, blocks
+  `INTO OUTFILE / DUMPFILE`, allows a single statement only — and every
+  statement additionally runs inside a `READ ONLY` transaction, so the
+  server itself rejects anything that would modify data.
+- **Resource bounds:** cells truncate at 4096 characters, result sets cap at
+  256 columns / 8 MB total output, database calls have a 45 s total deadline
+  (plus 5 s connect / 30 s read-write timeouts), and the overlay kills a hung
+  engine (SIGTERM, then SIGKILL) after 60 s.
 
 ## Development
 
-From a plain checkout, `./install.sh` builds the engine, links the plugin
-files into `~/.config/omarchy/plugins/`, enables it, and restarts the shell.
-After QML edits run `omarchy restart shell` (symlinked files don't hot-reload).
+`./install.sh` only builds the engine to `~/.local/bin/omysql-engine` — it
+never touches the plugin files. Sync those with `omarchy plugin update
+madddtone.gomysql-peek --yes`, then `omarchy restart shell` (real files
+don't hot-reload).
 
 ```
 manifest.json      plugin manifest (kinds: overlay, bar-widget; id madddtone.gomysql-peek)
@@ -159,7 +179,7 @@ DbPeek.qml         the overlay UI
 PeekBarWidget.qml  the bar icon that toggles the overlay
 Peek.js            parsing/format helpers
 engine/            the Go data engine (module gomysql-peek/engine)
-install.sh         engine build + (dev) link/enable/restart
+install.sh         engine build (plugin files stay managed by omarchy plugin add/update)
 ```
 
 Note: the widget file must not be named `BarWidget.qml` — that collides with

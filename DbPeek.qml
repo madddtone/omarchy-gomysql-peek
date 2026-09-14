@@ -31,6 +31,8 @@ Item {
   readonly property string activeFilter: view === "profiles" ? profileFilter : view === "databases" ? databaseFilter : view === "tables" ? tableFilter : ""
   property int selectedIndex: 0
   property string yankFeedback: ""
+  property string stdinPayload: ""
+  property string queuedStdin: ""
   property bool searchOpen: false
   property string searchTerm: ""
   property bool queryOpen: false
@@ -185,22 +187,34 @@ Item {
   property var queuedArgs: null
   property var queuedCb: null
 
-  function run(args, cb) {
+  function run(args, cb, stdinText) {
     if (root.busy) {
       root.queuedArgs = args
       root.queuedCb = cb
+      root.queuedStdin = stdinText || ""
       return
     }
     root.busy = true
     root.errorText = ""
     root.pendingCb = cb
+    root.stdinPayload = stdinText || ""
     engineProc.command = [root.engineBin].concat(args)
+    engineWatchdog.restart()
     engineProc.running = true
   }
 
   Process {
     id: engineProc
     command: []
+    // Credentials travel over this private pipe, never on the command line.
+    stdinEnabled: true
+
+    onStarted: {
+      if (root.stdinPayload !== "") {
+        engineProc.write(root.stdinPayload)
+        root.stdinPayload = ""
+      }
+    }
 
     stdout: StdioCollector {
       id: engineStdout
@@ -213,6 +227,8 @@ Item {
 
     onExited: function (exitCode) {
       root.busy = false
+      engineWatchdog.stop()
+      engineKillTimer.stop()
       var cb = root.pendingCb
       root.pendingCb = null
       if (exitCode !== 0) {
@@ -231,9 +247,11 @@ Item {
       if (root.queuedArgs) {
         var args = root.queuedArgs
         var queued = root.queuedCb
+        var queuedIn = root.queuedStdin
         root.queuedArgs = null
         root.queuedCb = null
-        root.run(args, queued)
+        root.queuedStdin = ""
+        root.run(args, queued, queuedIn)
       }
     }
   }
@@ -244,6 +262,32 @@ Item {
     onTriggered: {
       root.escWarn = false
       root.escArmedAt = 0
+    }
+  }
+
+  // Backstop behind the engine's own timeouts: a hung engine gets SIGTERM,
+  // then SIGKILL, so a stuck query can never wedge the shell.
+  Timer {
+    id: engineWatchdog
+    interval: 60000
+    onTriggered: {
+      if (!root.busy) return
+      root.queuedArgs = null
+      root.queuedCb = null
+      root.queuedStdin = ""
+      root.pendingCb = null
+      root.busy = false
+      root.errorText = "engine timed out — killed it"
+      engineProc.signal(15)
+      engineKillTimer.restart()
+    }
+  }
+
+  Timer {
+    id: engineKillTimer
+    interval: 5000
+    onTriggered: {
+      if (engineProc.running) engineProc.signal(9)
     }
   }
 
@@ -317,18 +361,16 @@ Item {
     }
     var port = portField.text.trim()
     if (port === "") port = "3306"
-    var args = ["profile", "save", "--name", name, "--host", host,
-      "--port", port, "--user", userField.text.trim(),
-      "--password", passwordField.text,
-      "--database", databaseField.text.trim()]
+    var args = ["profile", "save"]
     var saved = { name: name, host: host, port: port,
       user: userField.text.trim(), password: passwordField.text,
       database: databaseField.text.trim() }
+    // The whole profile (password included) goes over stdin — never argv.
     run(args, function (data) {
       if (!data) return
       root.fetchProfiles()
       root.openProfile(saved)
-    })
+    }, JSON.stringify(saved))
   }
 
   function requestDelete() {

@@ -2,15 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -34,9 +38,19 @@ type profileOut struct {
 
 const maxCellRunes = 4096
 
+// Producer-side ceilings: nothing the database returns may force unbounded
+// work or output on this side.
+const maxProfileBytes = 64 * 1024
+const maxProfilesBytes = 1 << 20
+const maxColumns = 256
+const maxOutputBytes = 8 << 20
+
+// Total deadline for any single database interaction.
+const dbTimeout = 45 * time.Second
+
 var readKeywords = map[string]bool{
 	"SELECT": true, "SHOW": true, "DESCRIBE": true, "DESC": true,
-	"EXPLAIN": true, "WITH": true, "ANALYZE": true, "VALUES": true,
+	"EXPLAIN": true, "WITH": true, "VALUES": true,
 }
 
 func fail(format string, args ...any) {
@@ -55,13 +69,45 @@ func connectionsPath() string {
 	return filepath.Join(dir, "gomysql", "connections.json")
 }
 
+func verifyCredFile(st os.FileInfo, path string) error {
+	if !st.Mode().IsRegular() {
+		return fmt.Errorf("connections file is not a regular file: %s", path)
+	}
+	s, ok := st.Sys().(*syscall.Stat_t)
+	if !ok || int(s.Uid) != os.Geteuid() {
+		return fmt.Errorf("connections file is not owned by you: %s", path)
+	}
+	if st.Mode().Perm() != 0o600 {
+		return fmt.Errorf("connections file must have 0600 permissions (run: chmod 600 %s)", path)
+	}
+	return nil
+}
+
 func loadProfiles() []connProfile {
-	data, err := os.ReadFile(connectionsPath())
+	path := connectionsPath()
+	// O_NOFOLLOW: a symlink here (planted or accidental) fails instead of
+	// silently redirecting credential reads elsewhere.
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []connProfile{}
 		}
-		fail("no gomysql connections file (%s): %v", connectionsPath(), err)
+		fail("cannot open connections file (%s): %v", path, err)
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		fail("cannot stat connections file: %v", err)
+	}
+	if err := verifyCredFile(st, path); err != nil {
+		fail("%v", err)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxProfilesBytes+1))
+	if err != nil {
+		fail("cannot read connections file: %v", err)
+	}
+	if len(data) > maxProfilesBytes {
+		fail("connections file too large")
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
 		return []connProfile{}
@@ -88,13 +134,13 @@ func buildDSN(p connProfile, db string) string {
 		url.QueryEscape(p.User), url.QueryEscape(p.Password), p.Host, p.Port, db)
 }
 
-func open(p connProfile, db string) *sql.DB {
+func open(ctx context.Context, p connProfile, db string) *sql.DB {
 	handle, err := sql.Open("mysql", buildDSN(p, db))
 	if err != nil {
 		fail("%v", err)
 	}
 	handle.SetMaxOpenConns(4)
-	if err := handle.Ping(); err != nil {
+	if err := handle.PingContext(ctx); err != nil {
 		handle.Close()
 		fail("%v", err)
 	}
@@ -125,14 +171,61 @@ func emit(v any) {
 
 func saveProfilesFile(list []connProfile) error {
 	path := connectionsPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	// Lstat (never follows symlinks): the config location must be a real
+	// directory owned by us, with private permissions.
+	dst, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !dst.IsDir() {
+		return fmt.Errorf("config location is not a directory: %s", dir)
+	}
+	if s, ok := dst.Sys().(*syscall.Stat_t); !ok || int(s.Uid) != os.Geteuid() {
+		return fmt.Errorf("config directory is not owned by you: %s", dir)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(list, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	// Publish atomically: private temp file in the same directory, then a
+	// single rename over the target (rename replaces a planted symlink
+	// itself instead of following it, and WriteFile-style truncation never
+	// inherits stale permissions).
+	tmpName := filepath.Join(dir, fmt.Sprintf(".connections.%d.tmp", os.Getpid()))
+	tmp, err := os.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	st, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	return verifyCredFile(st, path)
 }
 
 func cmdProfileGet(fs *flag.FlagSet) {
@@ -147,24 +240,30 @@ func cmdProfileGet(fs *flag.FlagSet) {
 }
 
 func cmdProfileSave(fs *flag.FlagSet) {
-	name := fs.String("name", "", "profile name")
-	host := fs.String("host", "", "host")
-	port := fs.String("port", "3306", "port")
-	user := fs.String("user", "", "user")
-	password := fs.String("password", "", "password")
-	database := fs.String("database", "", "default database")
 	_ = fs.Parse(os.Args[3:])
-	if *name == "" || *host == "" {
+	// Credentials arrive over stdin (a private pipe), never on the process
+	// command line where every local user could read them via ps.
+	data, err := io.ReadAll(io.LimitReader(os.Stdin, maxProfileBytes+1))
+	if err != nil {
+		fail("cannot read profile from stdin: %v", err)
+	}
+	if len(data) > maxProfileBytes {
+		fail("profile data too large")
+	}
+	var p connProfile
+	if err := json.Unmarshal(data, &p); err != nil {
+		fail("invalid profile JSON on stdin: %v", err)
+	}
+	if p.Name == "" || p.Host == "" {
 		fail("name and host are required")
 	}
-	if *port == "" {
-		*port = "3306"
+	if p.Port == "" {
+		p.Port = "3306"
 	}
 	list := loadProfiles()
-	p := connProfile{Name: *name, Host: *host, Port: *port, User: *user, Password: *password, Database: *database}
 	replaced := false
 	for i := range list {
-		if list[i].Name == *name {
+		if list[i].Name == p.Name {
 			list[i] = p
 			replaced = true
 			break
@@ -176,7 +275,7 @@ func cmdProfileSave(fs *flag.FlagSet) {
 	if err := saveProfilesFile(list); err != nil {
 		fail("%v", err)
 	}
-	emit(map[string]any{"saved": *name})
+	emit(map[string]any{"saved": p.Name})
 }
 
 func cmdProfileRemove(fs *flag.FlagSet) {
@@ -225,9 +324,11 @@ func cmdDbs(fs *flag.FlagSet) {
 		os.Exit(2)
 	}
 	p := findProfile(*name)
-	handle := open(p, "")
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+	handle := open(ctx, p, "")
 	defer handle.Close()
-	rows, err := handle.Query("SHOW DATABASES")
+	rows, err := handle.QueryContext(ctx, "SHOW DATABASES")
 	if err != nil {
 		fail("%v", err)
 	}
@@ -264,9 +365,11 @@ func cmdTables(fs *flag.FlagSet) {
 	if database == "" {
 		fail("no database selected: pass --db or save a database in the profile")
 	}
-	handle := open(p, database)
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+	handle := open(ctx, p, database)
 	defer handle.Close()
-	rows, err := handle.Query("SHOW TABLES")
+	rows, err := handle.QueryContext(ctx, "SHOW TABLES")
 	if err != nil {
 		fail("%v", err)
 	}
@@ -291,8 +394,8 @@ func tableRef(database, table string) string {
 	return quoteIdent(database) + "." + quoteIdent(table)
 }
 
-func readColumns(handle *sql.DB, ref string) ([]string, error) {
-	rows, err := handle.Query("SHOW COLUMNS FROM " + ref)
+func readColumns(ctx context.Context, handle *sql.DB, ref string) ([]string, error) {
+	rows, err := handle.QueryContext(ctx, "SHOW COLUMNS FROM "+ref)
 	if err != nil {
 		return nil, err
 	}
@@ -309,8 +412,14 @@ func readColumns(handle *sql.DB, ref string) ([]string, error) {
 	return cols, rows.Err()
 }
 
-func fetchPage(handle *sql.DB, q string, args []any, maxRows int64) ([]string, []json.RawMessage, bool, error) {
-	rows, err := handle.Query(q, args...)
+// queryer is satisfied by *sql.DB and *sql.Tx so user SQL can run inside a
+// read-only transaction while internally generated SQL uses the pool.
+type queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func fetchPage(ctx context.Context, qer queryer, q string, args []any, maxRows int64) ([]string, []json.RawMessage, bool, error) {
+	rows, err := qer.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -319,6 +428,9 @@ func fetchPage(handle *sql.DB, q string, args []any, maxRows int64) ([]string, [
 	if err != nil {
 		return nil, nil, false, err
 	}
+	if len(cols) > maxColumns {
+		return nil, nil, false, fmt.Errorf("too many columns (%d, max %d)", len(cols), maxColumns)
+	}
 	vals := make([]sql.NullString, len(cols))
 	ptrs := make([]any, len(cols))
 	for i := range vals {
@@ -326,6 +438,7 @@ func fetchPage(handle *sql.DB, q string, args []any, maxRows int64) ([]string, [
 	}
 	out := []json.RawMessage{}
 	truncated := false
+	var outBytes int64
 	for rows.Next() {
 		if int64(len(out)) >= maxRows {
 			truncated = true
@@ -341,6 +454,11 @@ func fetchPage(handle *sql.DB, q string, args []any, maxRows int64) ([]string, [
 		raw, err := json.Marshal(row)
 		if err != nil {
 			return nil, nil, false, err
+		}
+		outBytes += int64(len(raw))
+		if outBytes > maxOutputBytes {
+			truncated = true
+			break
 		}
 		out = append(out, raw)
 	}
@@ -392,10 +510,12 @@ func cmdRows(fs *flag.FlagSet) {
 	if database == "" {
 		fail("no database selected: pass --db or save a database in the profile")
 	}
-	handle := open(p, database)
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+	handle := open(ctx, p, database)
 	defer handle.Close()
 	ref := tableRef(database, *table)
-	cols, err := readColumns(handle, ref)
+	cols, err := readColumns(ctx, handle, ref)
 	if err != nil {
 		fail("%v", err)
 	}
@@ -415,13 +535,13 @@ func cmdRows(fs *flag.FlagSet) {
 		}
 		where = " WHERE " + strings.Join(conds, " OR ")
 	}
-	if err := handle.QueryRow("SELECT COUNT(*) FROM "+ref+where, args...).Scan(&total); err != nil {
+	if err := handle.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+ref+where, args...).Scan(&total); err != nil {
 		fail("%v", err)
 	}
 
 	q := "SELECT * FROM " + ref + where + " LIMIT ? OFFSET ?"
 	pageArgs := append(append([]any{}, args...), limit, offset)
-	pageCols, raw, truncated, err := fetchPage(handle, q, pageArgs, limit)
+	pageCols, raw, truncated, err := fetchPage(ctx, handle, q, pageArgs, limit)
 	if err != nil {
 		fail("%v", err)
 	}
@@ -458,7 +578,11 @@ func cmdQuery(fs *flag.FlagSet) {
 		keyword = "SELECT"
 	}
 	if !readKeywords[keyword] {
-		fail("only read-only queries are allowed (SELECT, SHOW, DESCRIBE, EXPLAIN, WITH, ...)")
+		fail("only read-only queries are allowed (SELECT, SHOW, DESCRIBE, EXPLAIN, WITH, VALUES)")
+	}
+	upper := strings.ToUpper(trimmed)
+	if strings.Contains(upper, "INTO OUTFILE") || strings.Contains(upper, "INTO DUMPFILE") {
+		fail("writing server-side files is not allowed")
 	}
 	if strings.Contains(trimmed, ";") {
 		tail := strings.TrimSpace(trimmed[strings.LastIndex(trimmed, ";")+1:])
@@ -471,9 +595,19 @@ func cmdQuery(fs *flag.FlagSet) {
 	if database == "" {
 		database = p.Database
 	}
-	handle := open(p, database)
+	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+	defer cancel()
+	handle := open(ctx, p, database)
 	defer handle.Close()
-	cols, raw, truncated, err := fetchPage(handle, trimmed, nil, maxRows)
+	// The keyword allowlist is only the first gate: user SQL always runs
+	// inside a READ ONLY transaction, so the server itself rejects anything
+	// that would modify data (ANALYZE, EXPLAIN ANALYZE side effects, ...).
+	tx, err := handle.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		fail("%v", err)
+	}
+	defer tx.Rollback()
+	cols, raw, truncated, err := fetchPage(ctx, tx, trimmed, nil, maxRows)
 	if err != nil {
 		fail("%v", err)
 	}
