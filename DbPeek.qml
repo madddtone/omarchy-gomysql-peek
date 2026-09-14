@@ -1404,9 +1404,9 @@ Item {
 
               Text {
                 textFormat: Text.PlainText
-                text: root.isQueryResult
+                text: root.yankFeedback !== "" ? root.yankFeedback : (root.isQueryResult
                   ? Peek.rangeLabel(root.offset, root.shown, root.tableTotal, root.truncated) + (root.lastSql !== "" ? "  ·  " + root.lastSql : "")
-                  : Peek.rangeLabel(root.offset, root.shown, root.tableTotal, root.truncated)
+                  : Peek.rangeLabel(root.offset, root.shown, root.tableTotal, root.truncated))
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
